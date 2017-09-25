@@ -367,6 +367,62 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 }
 
 
+//// Parse Handlers
+
+static void HandleDefinition() {
+  if (ParseDefinition()) {
+    fprintf(stderr, "Parsed a function definition\n");
+  } else {
+    getNextToken();
+  }
+}
+
+static void HandleExtern() {
+  if (ParseExtern()) {
+    fprintf(stderr, "Parsed an extern\n");
+  } else {
+    getNextToken();
+  }
+}
+
+static void HandleTopLevelExpression() {
+  if (ParseTopLevelExpr()) {
+    fprintf(stderr, "Parsed a top-level expr\n");
+  } else {
+    getNextToken();
+  }
+}
+
+
+/// Driver
+static void MainLoop() {
+  while (1) {
+    fprintf(stderr, "ready> ");
+
+    switch (CurTok) {
+    case tok_eof:
+      return;
+
+    case ';':
+      getNextToken();
+      break;
+
+    case tok_def:
+      HandleDefinition();
+      break;
+
+    case tok_extern:
+      HandleExtern();
+      break;
+
+    default:
+      HandleTopLevelExpression();
+      break;
+    }
+  }
+}
+
+
 /// Main
 
 int main() {
@@ -374,5 +430,11 @@ int main() {
   BinopPrecedence['+'] = 20;
   BinopPrecedence['-'] = 20;
   BinopPrecedence['*'] = 40;
+
+  fprintf(stderr, "ready> ");
+  getNextToken();
+
+  MainLoop();
+
   return 0;
 }
