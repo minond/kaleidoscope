@@ -1,4 +1,4 @@
 CPP = clang++
 
 build:
-	$(CPP) -g -O3 main.cpp
+	$(CPP) -std=c++0x -stdlib=libc++ -I. -S -g -O3 main.cpp -o main

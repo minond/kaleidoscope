@@ -1,3 +1,4 @@
+// #include "llvm/ADT/STLExtras.h"
 // #include <algorithm>
 // #include <cctype>
 // #include <cstdio>
@@ -5,7 +6,7 @@
 // #include <map>
 // #include <memory>
 #include <string>
-// #include <vector>
+#include <vector>
 
 
 /// Lexer
@@ -74,6 +75,90 @@ static int gettok() {
   LastChar = getchar();
   return CurrChar;
 }
+
+
+/// AST
+
+// base class for all epxression nodes
+class ExprAST {
+public:
+  virtual ~ExprAST() {}
+};
+
+// expression class for numeric literals like "1.0"
+class NumberExprAST : public ExprAST {
+  double Val;
+
+public:
+  NumberExprAST(double Val) : Val(Val) {}
+};
+
+// expression class for referencing a variable, like "a"
+class VariableExprAST : public ExprAST {
+  std::string Name;
+
+public:
+  VariableExprAST(const std::string &Name) : Name(Name) {}
+};
+
+// expression class for a binary operator
+class BinaryExprAST : public ExprAST {
+  char Op;
+  std::unique_ptr<ExprAST> LHS, RHS;
+
+public:
+  BinaryExprAST(
+    char op,
+    std::unique_ptr<ExprAST> LHS,
+    std::unique_ptr<ExprAST> RHS
+  ) : Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+};
+
+// expression class for function calls
+class CallExprAST : public ExprAST {
+  std::string Callee;
+  std::vector<std::unique_ptr<ExprAST>> Args;
+
+public:
+  CallExprAST(
+    const std::string &Callee,
+    std::vector<std::unique_ptr<ExprAST>> Args
+  ) : Callee(Callee), Args(std::move(Args)) {}
+};
+
+// this class refresents the prototype for a function which captures its name,
+// and its argument names (thus its arity)
+class PrototypeAST {
+  std::string Name;
+  std::vector<std::string> Args;
+
+public:
+  PrototypeAST(
+    const std::string &name,
+    std::vector<std::string> Args
+  ) : Name(name), Args(std::move(Args)) {}
+
+  const std::string &getName() const {
+    return Name;
+  }
+};
+
+// refresents a function definition
+class FunctionAST {
+  std::unique_ptr<PrototypeAST> Proto;
+  std::unique_ptr<ExprAST> Body;
+
+public:
+  FunctionAST(
+    std::unique_ptr<PrototypeAST> Proto,
+    std::unique_ptr<ExprAST> Body
+  ) : Proto(std::move(Proto)), Body(std::move(Body)) {}
+};
+
+
+
+
+
 
 
 
