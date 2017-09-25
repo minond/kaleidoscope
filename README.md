@@ -16,7 +16,7 @@ https://llvm.org/docs/tutorial/index.html.
 > code for it all along the way, without overwhelming you with tons of details
 > up front.
 
-#### Getting and compiling LLVM
+#### Downloading and building LLVM
 
 ```bash
 wget http://releases.llvm.org/5.0.0/llvm-5.0.0.src.tar.xz
