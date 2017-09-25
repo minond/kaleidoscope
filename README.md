@@ -24,4 +24,5 @@ tar xf llvm-5.0.0.src.tar.xz
 mkdir llvm
 cd llvm
 cmake ../llvm-5.0.0.src
+make
 ```
