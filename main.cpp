@@ -1,12 +1,16 @@
-// #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLExtras.h"
 // #include <algorithm>
 // #include <cctype>
 // #include <cstdio>
 // #include <cstdlib>
-// #include <map>
+#include <map>
 // #include <memory>
 #include <string>
 #include <vector>
+
+
+class ExprAST;
+static std::unique_ptr<ExprAST> ParseExpression();
 
 
 /// Lexer
@@ -156,22 +160,164 @@ public:
 };
 
 
+/// Parser
+
+// provide a simple token buffer. CurTok is the current token the parser is
+// looking at. getNextToken reads another token from the lexer and updates
+// CurTok with its results.
+static int CurTok;
+
+static int getNextToken() {
+  return CurTok = gettok();
+}
+
+std::unique_ptr<ExprAST> LogError(const char *Str) {
+  fprintf(stderr, "LogError: %s\n", Str);
+  return nullptr;
+}
+
+std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
+// numberexpr ::= number
+static std::unique_ptr<ExprAST> ParseNumberExpr() {
+  auto Result = llvm::make_unique<NumberExprAST>(NumVal);
+  getNextToken();
+  return std::move(Result);
+}
+
+// parenexpr ::= '(' expression ')'
+static std::unique_ptr<ExprAST> ParseParenExpr() {
+  // eat (
+  getNextToken();
+  auto Val = ParseExpression();
+
+  if (!Val)
+    return nullptr;
+
+  if (CurTok != ')')
+    return LogError("Expected ')'");
+
+  // eat )
+  getNextToken();
+  return Val;
+}
+
+// indentifierexpr
+//   ::= indentifier
+//   ::= indentifier '(' expression* ')'
+static std::unique_ptr<ExprAST> ParseIdentifierExpr() {
+  std::string IdName = IdentifierStr;
+
+  // eat identifier
+  getNextToken();
+
+  if (CurTok != '(')
+    return llvm::make_unique<VariableExprAST>(IdName);
+
+  // call
+  // eat (
+  getNextToken();
+  std::vector<std::unique_ptr<ExprAST>> Args;
+
+  if (CurTok != ')') {
+    while (1) {
+      if (auto Arg = ParseExpression())
+        Args.push_back(std::move(Arg));
+      else
+        return nullptr;
+
+      if (CurTok == ')')
+        break;
+
+      if (CurTok != ',')
+        return LogError("Expected ')' or ',' in argument list");
+
+      getNextToken();
+    }
+  }
+
+  getNextToken();
+
+  return llvm::make_unique<CallExprAST>(IdName, std::move(Args));
+}
+
+// primary
+//   ::= identifierexpr
+//   ::= numberexpr
+//   ::= parenexpr
+static std::unique_ptr<ExprAST> ParsePrimary() {
+  switch (CurTok) {
+  default:
+    return LogError("Unknown token when expecting an expression");
+
+  case tok_identifier:
+    return ParseIdentifierExpr();
+
+  case tok_number:
+    return ParseNumberExpr();
+
+  case '(':
+    return ParseParenExpr();
+  }
+}
+
+static std::map<char, int> BinopPrecedence;
+
+static int GetTokPrecedence() {
+  if (!isascii(CurTok))
+    return -1;
+
+  int TokPrec = BinopPrecedence[CurTok];
+  if (TokPrec <= 0) return -1;
+  return TokPrec;
+}
+
+static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS) {
+  while (1) {
+    int TokPrec = GetTokPrecedence();
+
+    if (TokPrec < ExprPrec)
+      return LHS;
+
+    int BinOp = CurTok;
+    getNextToken();
+
+    auto RHS = ParsePrimary();
+    if (!RHS)
+      return nullptr;
+
+    int NextPrec = GetTokPrecedence();
+    if (TokPrec < NextPrec) {
+      RHS = ParseBinOpRHS(TokPrec + 1, std::move(RHS));
+
+      if (!RHS)
+        return nullptr;
+    }
+
+    LHS = llvm::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+  }
+}
+
+// expression ::= primary binoprhs
+static std::unique_ptr<ExprAST> ParseExpression() {
+  auto LHS = ParsePrimary();
+
+  if (!LHS)
+    return nullptr;
+
+  return ParseBinOpRHS(0, std::move(LHS));
+}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+/// Main
 
 int main() {
+  BinopPrecedence['<'] = 10;
+  BinopPrecedence['+'] = 20;
+  BinopPrecedence['-'] = 20;
+  BinopPrecedence['*'] = 40;
   return 0;
 }
