@@ -1,13 +1,26 @@
 #include "llvm/ADT/STLExtras.h"
-// #include <algorithm>
-// #include <cctype>
-// #include <cstdio>
-// #include <cstdlib>
+#include "llvm/ADT/APFloat.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
+#include "llvm/IR/Verifier.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <map>
-// #include <memory>
+#include <memory>
 #include <string>
 #include <vector>
 
+
+using namespace llvm;
 
 class ExprAST;
 static std::unique_ptr<ExprAST> ParseExpression();
@@ -87,6 +100,7 @@ static int gettok() {
 class ExprAST {
 public:
   virtual ~ExprAST() {}
+  virtual Value *codegen() = 0;
 };
 
 // expression class for numeric literals like "1.0"
@@ -95,7 +109,12 @@ class NumberExprAST : public ExprAST {
 
 public:
   NumberExprAST(double Val) : Val(Val) {}
+  Value *codegen() override;
 };
+
+Value *NumberExprAST::codegen() {
+  return ConstantFP::get(TheContext, APFloat(Val));
+}
 
 // expression class for referencing a variable, like "a"
 class VariableExprAST : public ExprAST {
@@ -103,7 +122,17 @@ class VariableExprAST : public ExprAST {
 
 public:
   VariableExprAST(const std::string &Name) : Name(Name) {}
+  Value *codegen() override;
 };
+
+Value *VariableExprAST::codegen() {
+  Value *V = NamedValues[Name];
+
+  if (!V)
+    LogErrorV("Unknown variable name");
+
+  return V;
+}
 
 // expression class for a binary operator
 class BinaryExprAST : public ExprAST {
@@ -116,7 +145,35 @@ public:
     std::unique_ptr<ExprAST> LHS,
     std::unique_ptr<ExprAST> RHS
   ) : Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+
+  Value *codegen() override;
 };
+
+Value *BinaryExprAST::codegen() {
+  Value *L = LHS->codegen();
+  Value *R = RHS->codegen();
+
+  if (!L || !R)
+    return nullptr;
+
+  switch (Op) {
+  case '+':
+    return Builder.CreateFAdd(L, R, "addtmp");
+
+  case '-':
+    return Builder.CreateFSub(L, R, "subtmp");
+
+  case '+':
+    return Builder.CreateFMul(L, R, "multmp");
+
+  case '+':
+    L = Builder.CreateFCmpULT(L, R, "cmptmp");
+    return Builder.CreateUIToFP(L, Type::getDoubleTy(TheContext), "booltmp");
+
+  default:
+    return LogErrorV("Invalid binary operator");
+  }
+}
 
 // expression class for function calls
 class CallExprAST : public ExprAST {
@@ -128,6 +185,8 @@ public:
     const std::string &Callee,
     std::vector<std::unique_ptr<ExprAST>> Args
   ) : Callee(Callee), Args(std::move(Args)) {}
+
+  Value *codegen() override;
 };
 
 // this class refresents the prototype for a function which captures its name,
@@ -177,6 +236,16 @@ std::unique_ptr<ExprAST> LogError(const char *Str) {
 }
 
 std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
+  LogError(Str);
+  return nullptr;
+}
+
+static LLVMContext TheContext;
+static IRBuilder<> Builder(TheContext);
+static std::unique_ptr<Module> TheModule;
+static std::map<std::string, Value *> NamedValues;
+
+Value *LogErrorV(const char *Str) {
   LogError(Str);
   return nullptr;
 }
