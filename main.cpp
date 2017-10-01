@@ -213,7 +213,7 @@ Value *CallExprAST::codegen() {
   if (CalleeF->arg_size() != Args.size())
     return LogErrorV("Number of arguments does not match");
 
-  std::vector<Value*> ArgsV;
+  std::vector<Value *> ArgsV;
   for (unsigned i = 0, e = Args.size(); i != e; ++i) {
     ArgsV.push_back(Args[i]->codegen());
 
@@ -278,11 +278,11 @@ Function *FunctionAST::codegen() {
   if (!TheFunction)
     return nullptr;
 
-  if (!TheFunction->empty())
-    return (Function*) LogErrorV("Function cannot be redifined");
-
   BasicBlock *BB = BasicBlock::Create(TheContext, "entry", TheFunction);
   Builder.SetInsertPoint(BB);
+
+  // if (!TheFunction->empty())
+  //   return (Function*) LogErrorV("Function cannot be redifined");
 
   NamedValues.clear();
   for (auto &Arg : TheFunction->args())
@@ -504,24 +504,36 @@ static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
 //// Parse Handlers
 
 static void HandleDefinition() {
-  if (ParseDefinition()) {
-    fprintf(stderr, "Parsed a function definition\n");
+  if (auto FnAST = ParseDefinition()) {
+    if (auto *FnIR = FnAST->codegen()) {
+      fprintf(stderr, "Parsed a function definition\n");
+      FnIR->print(errs());
+      fprintf(stderr, "\n");
+    }
   } else {
     getNextToken();
   }
 }
 
 static void HandleExtern() {
-  if (ParseExtern()) {
-    fprintf(stderr, "Parsed an extern\n");
+  if (auto ProtoAST = ParseExtern()) {
+    if (auto *FnIR = ProtoAST->codegen()) {
+      fprintf(stderr, "Parsed an extern\n");
+      FnIR->print(errs());
+      fprintf(stderr, "\n");
+    }
   } else {
     getNextToken();
   }
 }
 
 static void HandleTopLevelExpression() {
-  if (ParseTopLevelExpr()) {
-    fprintf(stderr, "Parsed a top-level expr\n");
+  if (auto FnAST = ParseTopLevelExpr()) {
+    if (auto *FnIR = FnAST->codegen()) {
+      fprintf(stderr, "Parsed a top-level expr\n");
+      FnIR->print(errs());
+      fprintf(stderr, "\n");
+    }
   } else {
     getNextToken();
   }
@@ -568,7 +580,11 @@ int main() {
   fprintf(stderr, "ready> ");
   getNextToken();
 
+  TheModule = llvm::make_unique<Module>("my own jit", TheContext);
+
   MainLoop();
+
+  TheModule->print(errs(), nullptr);
 
   return 0;
 }
