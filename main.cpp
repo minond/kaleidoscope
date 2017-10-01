@@ -34,6 +34,11 @@ static std::string IdentifierStr;
 // for tok_number
 static double NumVal;
 
+static LLVMContext TheContext;
+static IRBuilder<> Builder(TheContext);
+static std::unique_ptr<Module> TheModule;
+static std::map<std::string, Value *> NamedValues;
+
 // tokens 0-255 are for unknown characters. known tokens listed below
 enum Token {
   tok_eof = -1,
@@ -91,6 +96,16 @@ static int gettok() {
   int CurrChar = LastChar;
   LastChar = getchar();
   return CurrChar;
+}
+
+std::unique_ptr<ExprAST> LogError(const char *Str) {
+  fprintf(stderr, "LogError: %s\n", Str);
+  return nullptr;
+}
+
+Value *LogErrorV(const char *Str) {
+  LogError(Str);
+  return nullptr;
 }
 
 
@@ -163,10 +178,10 @@ Value *BinaryExprAST::codegen() {
   case '-':
     return Builder.CreateFSub(L, R, "subtmp");
 
-  case '+':
+  case '*':
     return Builder.CreateFMul(L, R, "multmp");
 
-  case '+':
+  case '<':
     L = Builder.CreateFCmpULT(L, R, "cmptmp");
     return Builder.CreateUIToFP(L, Type::getDoubleTy(TheContext), "booltmp");
 
@@ -189,6 +204,26 @@ public:
   Value *codegen() override;
 };
 
+Value *CallExprAST::codegen() {
+  Function *CalleeF = TheModule->getFunction(Callee);
+
+  if (!CalleeF)
+    return LogErrorV("Unknown function referenced");
+
+  if (CalleeF->arg_size() != Args.size())
+    return LogErrorV("Number of arguments does not match");
+
+  std::vector<Value*> ArgsV;
+  for (unsigned i = 0, e = Args.size(); i != e; ++i) {
+    ArgsV.push_back(Args[i]->codegen());
+
+    if (!ArgsV.back())
+      return nullptr;
+  }
+
+  return Builder.CreateCall(CalleeF, ArgsV, "calltmp");
+}
+
 // this class refresents the prototype for a function which captures its name,
 // and its argument names (thus its arity)
 class PrototypeAST {
@@ -204,7 +239,21 @@ public:
   const std::string &getName() const {
     return Name;
   }
+
+  Function *codegen();
 };
+
+Function *PrototypeAST::codegen() {
+  std::vector<Type*> Doubles(Args.size(), Type::getDoubleTy(TheContext));
+  FunctionType *Ft = FunctionType::get(Type::getDoubleTy(TheContext), Doubles, false);
+  Function *F = Function::Create(Ft, Function::ExternalLinkage, Name, TheModule.get());
+
+  unsigned Idx = 0;
+  for (auto &Arg : F->args())
+    Arg.setName(Args[Idx++]);
+
+  return F;
+}
 
 // refresents a function definition
 class FunctionAST {
@@ -216,7 +265,38 @@ public:
     std::unique_ptr<PrototypeAST> Proto,
     std::unique_ptr<ExprAST> Body
   ) : Proto(std::move(Proto)), Body(std::move(Body)) {}
+
+  Function *codegen();
 };
+
+Function *FunctionAST::codegen() {
+  Function *TheFunction = TheModule->getFunction(Proto->getName());
+
+  if (!TheFunction)
+    TheFunction = Proto->codegen();
+
+  if (!TheFunction)
+    return nullptr;
+
+  if (!TheFunction->empty())
+    return (Function*) LogErrorV("Function cannot be redifined");
+
+  BasicBlock *BB = BasicBlock::Create(TheContext, "entry", TheFunction);
+  Builder.SetInsertPoint(BB);
+
+  NamedValues.clear();
+  for (auto &Arg : TheFunction->args())
+    NamedValues[Arg.getName()] = &Arg;
+
+  if (Value *RetVal = Body->codegen()) {
+    Builder.CreateRet(RetVal);
+    verifyFunction(*TheFunction);
+    return TheFunction;
+  }
+
+  TheFunction->eraseFromParent();
+  return nullptr;
+}
 
 
 /// Parser
@@ -230,22 +310,7 @@ static int getNextToken() {
   return CurTok = gettok();
 }
 
-std::unique_ptr<ExprAST> LogError(const char *Str) {
-  fprintf(stderr, "LogError: %s\n", Str);
-  return nullptr;
-}
-
 std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
-  LogError(Str);
-  return nullptr;
-}
-
-static LLVMContext TheContext;
-static IRBuilder<> Builder(TheContext);
-static std::unique_ptr<Module> TheModule;
-static std::map<std::string, Value *> NamedValues;
-
-Value *LogErrorV(const char *Str) {
   LogError(Str);
   return nullptr;
 }
