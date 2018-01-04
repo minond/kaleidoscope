@@ -1,5 +1,5 @@
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -10,6 +10,8 @@
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Verifier.h"
 
+#include "./KaleidoscopeJIT.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -19,12 +21,10 @@
 #include <string>
 #include <vector>
 
-
 using namespace llvm;
 
 class ExprAST;
 static std::unique_ptr<ExprAST> ParseExpression();
-
 
 /// Lexer
 
@@ -108,7 +108,6 @@ Value *LogErrorV(const char *Str) {
   return nullptr;
 }
 
-
 /// AST
 
 // base class for all epxression nodes
@@ -155,11 +154,9 @@ class BinaryExprAST : public ExprAST {
   std::unique_ptr<ExprAST> LHS, RHS;
 
 public:
-  BinaryExprAST(
-    char op,
-    std::unique_ptr<ExprAST> LHS,
-    std::unique_ptr<ExprAST> RHS
-  ) : Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
+  BinaryExprAST(char op, std::unique_ptr<ExprAST> LHS,
+                std::unique_ptr<ExprAST> RHS)
+      : Op(op), LHS(std::move(LHS)), RHS(std::move(RHS)) {}
 
   Value *codegen() override;
 };
@@ -196,10 +193,9 @@ class CallExprAST : public ExprAST {
   std::vector<std::unique_ptr<ExprAST>> Args;
 
 public:
-  CallExprAST(
-    const std::string &Callee,
-    std::vector<std::unique_ptr<ExprAST>> Args
-  ) : Callee(Callee), Args(std::move(Args)) {}
+  CallExprAST(const std::string &Callee,
+              std::vector<std::unique_ptr<ExprAST>> Args)
+      : Callee(Callee), Args(std::move(Args)) {}
 
   Value *codegen() override;
 };
@@ -231,22 +227,20 @@ class PrototypeAST {
   std::vector<std::string> Args;
 
 public:
-  PrototypeAST(
-    const std::string &name,
-    std::vector<std::string> Args
-  ) : Name(name), Args(std::move(Args)) {}
+  PrototypeAST(const std::string &name, std::vector<std::string> Args)
+      : Name(name), Args(std::move(Args)) {}
 
-  const std::string &getName() const {
-    return Name;
-  }
+  const std::string &getName() const { return Name; }
 
   Function *codegen();
 };
 
 Function *PrototypeAST::codegen() {
-  std::vector<Type*> Doubles(Args.size(), Type::getDoubleTy(TheContext));
-  FunctionType *Ft = FunctionType::get(Type::getDoubleTy(TheContext), Doubles, false);
-  Function *F = Function::Create(Ft, Function::ExternalLinkage, Name, TheModule.get());
+  std::vector<Type *> Doubles(Args.size(), Type::getDoubleTy(TheContext));
+  FunctionType *Ft =
+      FunctionType::get(Type::getDoubleTy(TheContext), Doubles, false);
+  Function *F =
+      Function::Create(Ft, Function::ExternalLinkage, Name, TheModule.get());
 
   unsigned Idx = 0;
   for (auto &Arg : F->args())
@@ -261,10 +255,9 @@ class FunctionAST {
   std::unique_ptr<ExprAST> Body;
 
 public:
-  FunctionAST(
-    std::unique_ptr<PrototypeAST> Proto,
-    std::unique_ptr<ExprAST> Body
-  ) : Proto(std::move(Proto)), Body(std::move(Body)) {}
+  FunctionAST(std::unique_ptr<PrototypeAST> Proto,
+              std::unique_ptr<ExprAST> Body)
+      : Proto(std::move(Proto)), Body(std::move(Body)) {}
 
   Function *codegen();
 };
@@ -298,7 +291,6 @@ Function *FunctionAST::codegen() {
   return nullptr;
 }
 
-
 /// Parser
 
 // provide a simple token buffer. CurTok is the current token the parser is
@@ -306,9 +298,7 @@ Function *FunctionAST::codegen() {
 // CurTok with its results.
 static int CurTok;
 
-static int getNextToken() {
-  return CurTok = gettok();
-}
+static int getNextToken() { return CurTok = gettok(); }
 
 std::unique_ptr<PrototypeAST> LogErrorP(const char *Str) {
   LogError(Str);
@@ -405,11 +395,13 @@ static int GetTokPrecedence() {
     return -1;
 
   int TokPrec = BinopPrecedence[CurTok];
-  if (TokPrec <= 0) return -1;
+  if (TokPrec <= 0)
+    return -1;
   return TokPrec;
 }
 
-static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<ExprAST> LHS) {
+static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec,
+                                              std::unique_ptr<ExprAST> LHS) {
   while (1) {
     int TokPrec = GetTokPrecedence();
 
@@ -431,7 +423,8 @@ static std::unique_ptr<ExprAST> ParseBinOpRHS(int ExprPrec, std::unique_ptr<Expr
         return nullptr;
     }
 
-    LHS = llvm::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
+    LHS =
+        llvm::make_unique<BinaryExprAST>(BinOp, std::move(LHS), std::move(RHS));
   }
 }
 
@@ -493,13 +486,13 @@ static std::unique_ptr<PrototypeAST> ParseExtern() {
 // toplevelexpr ::= expression
 static std::unique_ptr<FunctionAST> ParseTopLevelExpr() {
   if (auto E = ParseExpression()) {
-    auto Proto = llvm::make_unique<PrototypeAST>("", std::vector<std::string>());
+    auto Proto =
+        llvm::make_unique<PrototypeAST>("", std::vector<std::string>());
     return llvm::make_unique<FunctionAST>(std::move(Proto), std::move(E));
   }
 
   return nullptr;
 }
-
 
 //// Parse Handlers
 
@@ -539,7 +532,6 @@ static void HandleTopLevelExpression() {
   }
 }
 
-
 /// Driver
 static void MainLoop() {
   while (1) {
@@ -567,7 +559,6 @@ static void MainLoop() {
     }
   }
 }
-
 
 /// Main
 
